@@ -5,17 +5,25 @@ import { trainValTestSplit } from './ml-utils'
 import * as tfvis from '@tensorflow/tfjs-vis';
 // const csvUrl = 'data/toxic_data_sample.csv'
 
-const csvUrl = 'data/toxicdatasample.csv';
-const EMBEDDING_SIZE = 1500;
-const TRAINING_EPOCH = 10;
+// const csvUrl = 'data/toxicdatasample.csv';
+// const csvUrl = 'http://localhost:1234/toxicdatasample.csv';
+const csvUrl = 'http://localhost:1234/toxicdatamid.csv';
+const EMBEDDING_SIZE = 8000;
+const TRAINING_EPOCH = 15;
 const render = true;
 const history = [];
 const surface = { name: 'onEpochEnd Performance', tab: 'Training' }
 const batchHistory = [];
 const batchSurface = { name: 'onBatchEnd Performance', tab: 'Training' };
+const MODEL_ID = 'toxicity_detector_tfidf';
+const IDF_STORAGE_ID = 'toxicity-idfs';
+const DICTIONARY_STORAGE_ID = 'toxicity-tfidf-dictionary';
 
 const readRawData = () => {
     // load data
+    console.log('readRawData called');
+    console.log('csvUrl', csvUrl);
+
     const readData = tf.data.csv(csvUrl, {
         columnConfigs: {
             toxic: {
@@ -44,6 +52,7 @@ const documentTokens = [];
 
 const run = async () => {
     const labels = [];
+    console.log('run called');
     const data = readRawData();
     await data.forEachAsync((item) => {
         const comment = item['xs']['comment_text'];
@@ -71,10 +80,10 @@ const run = async () => {
     }
 
     const dictionary = sortDictionary.slice(0, EMBEDDING_SIZE).map(row => row[0]);
-    console.log('dictionary: ', dictionary.length);
-    console.log('document Tokens: ', documentTokens)
+    console.log('dictionary: ', dictionary);
+    // console.log('document Tokens: ', documentTokens)
     const idfs = getInverseDocumentFrequency(documentTokens, dictionary);
-    // console.log(idfs);
+    console.log(idfs);
     const ds = prepareData(dictionary, idfs);
     // ds.forEachAsync(item => console.log(item))
 
@@ -101,7 +110,17 @@ const run = async () => {
     model = await trainModel(model, trainingDataset, validationDataset);
     await evaluateModel(model, testDataset);
     await getMoreEvaluationSummaries(model, testDataset);
+    const exportResult = await exportModel(model, MODEL_ID, IDF_STORAGE_ID, DICTIONARY_STORAGE_ID, idfs, dictionary);
+    // const loadedModel = await loadModel();
+    // loadedModel.summary();
 
+    // const sentence1 = 'It is great';
+    // const predictedClass1 = predictModel(sentence1, model);
+    // console.log('predicted class is: ', predictedClass1)
+
+    // const sentence2 = 'What the fuck';
+    // const predictedClass2 = predictModel(sentence2, model);
+    // console.log('predicted class is: ', predictedClass2)
 }
 
 const prepareDataUsingGenerator = (comments, dictionary, labels, idfs) => {
@@ -260,17 +279,72 @@ const getMoreEvaluationSummaries = async (model, testDataset) => {
     // // create confusion matrix report
     const confusionMatrixResult = await tfvis.metrics.confusionMatrix(allActualLablesTensor, allPredictedLablesTensor);
     const confusionMatrixVizResult = { "values": confusionMatrixResult };
-    console.log(`confusion matrix : \n ${JSON.stringify(confusionMatrixVizResult, null,2)}`);
+    console.log(`confusion matrix : \n ${JSON.stringify(confusionMatrixVizResult, null, 2)}`);
     const surface = { tab: 'Evaluation', name: 'Confusion Matrix' };
-     if (render){
+    if (render) {
         tfvis.render.confusionMatrix(surface, confusionMatrixVizResult);
-     }
+    }
 
 }
 
-export const train = () => {
-    tf.tidy(() => {
-        run();
+const exportModel = async (model, modelId, idfStorageId, dictStorageId, idfs, dictionary) => {
+    const modelPath = `localstorage://${modelId}`;
+    const saveModelResults = await model.save(modelPath);
+    console.log('model exported', saveModelResults);
+
+    localStorage.setItem(idfStorageId, JSON.stringify(idfs));
+    localStorage.setItem(dictStorageId, JSON.stringify(dictionary));
+    console.log('dictionary and IDFs exported');
+
+    return exportModel;
+}
+
+const loadModel = async () => {
+    const modelPath = `localstorage://${MODEL_ID}`;
+    const models = await tf.io.listModels();
+    if (models[modelPath]) {
+        const model = await tf.loadLayersModel(modelPath);
+        return model
+    }
+    else {
+        console.log('no model available');
+        return null;
+    }
+
+}
+
+export const load = () => {
+    return loadModel();
+}
+
+const predictModel = (sentence, model) => {
+    const idfObject = localStorage.getItem(IDF_STORAGE_ID);
+    const idfs = JSON.parse(idfObject);
+
+    const dictionaryObject = localStorage.getItem(DICTIONARY_STORAGE_ID);
+    const dictionary = JSON.parse(dictionaryObject);
+
+    const encoded = encoder(sentence.toLowerCase().trim(), dictionary, idfs);
+    const encodedTensor = tf.tensor2d([encoded], [1, dictionary.length]);
+
+    const predictionResult = model.predict(encodedTensor);
+
+    const predictionScore = predictionResult.dataSync();
+    const predictedClass = (predictionScore < 0.5) ? 'not-toxic' : 'toxic';
+    const result = `Probability: ${predictionScore} and Class: ${predictedClass}`;
+    console.log(result);
+    
+    return predictedClass;
+}
+
+export const predict = (sentence, model) => {
+    console.log("predict using custom model");
+    return predictModel(sentence, model);
+};
+
+export const  train = async () => {
+    tf.tidy(async () => {
+        await run();
     })
 
 }

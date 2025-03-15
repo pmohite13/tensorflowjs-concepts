@@ -11,6 +11,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
+    "@parcel/transformer-sass": "^2.13.3",
     "buffer": "^6.0.3",
     "parcel": "^2.13.3",
     "parcel-plugin-static-files-copy": "^2.6.0",
@@ -32,6 +33,9 @@
     "@tensorflow/tfjs-node": "^4.22.0",
     "@tensorflow/tfjs-vis": "^1.4.3",
     "express": "^4.21.2",
+    "jquery": "^3.7.1",
+    "material-icons": "^1.13.14",
+    "materialize-css": "^1.0.0-rc.2",
     "stopword": "^3.1.4"
   }
 }
